@@ -2,12 +2,15 @@ package commands
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
+	"github.com/dhrupo/gitshow/internal/export"
 	gitpkg "github.com/dhrupo/gitshow/internal/git"
 	"github.com/dhrupo/gitshow/internal/render"
 	"github.com/dhrupo/gitshow/internal/ui"
@@ -21,6 +24,9 @@ type replayOpts struct {
 	maxHunkLines int
 	chromaStyle  string
 	tui          string // "auto" (default), "on", or "off"
+	exportFmt    string // "" (default), "markdown", "json"
+	outputPath   string // "" (stdout) or a file path
+	excludeBody  bool
 }
 
 func newReplayCmd() *cobra.Command {
@@ -55,6 +61,9 @@ Examples:
 	cmd.Flags().IntVar(&opts.maxHunkLines, "max-hunk-lines", 80, "max lines per hunk before truncation; 0 = unlimited")
 	cmd.Flags().StringVar(&opts.chromaStyle, "chroma-style", "monokai", "Chroma syntax theme (monokai / dracula / nord / ...)")
 	cmd.Flags().StringVar(&opts.tui, "tui", "auto", "interactive TUI mode: auto / on / off")
+	cmd.Flags().StringVar(&opts.exportFmt, "export", "", "export instead of replaying: markdown / json")
+	cmd.Flags().StringVarP(&opts.outputPath, "output", "o", "", "write export to a file instead of stdout")
+	cmd.Flags().BoolVar(&opts.excludeBody, "exclude-body", false, "in exports, drop the commit body and keep only subject")
 
 	return cmd
 }
@@ -75,15 +84,57 @@ func runReplay(opts *replayOpts) error {
 		return fmt.Errorf("reading commits: %w", err)
 	}
 
-	if len(commits) == 0 {
+	if len(commits) == 0 && opts.exportFmt == "" {
 		fmt.Println("(no commits found)")
 		return nil
+	}
+
+	if opts.exportFmt != "" {
+		return runReplayExport(repo, commits, opts, cwd)
 	}
 
 	if shouldUseTUI(opts) {
 		return runReplayTUI(repo, commits, cwd)
 	}
 	return runReplayDump(repo, commits, opts)
+}
+
+func runReplayExport(repo *gitpkg.Repo, commits []gitpkg.Commit, opts *replayOpts, cwd string) error {
+	loaded := make([]export.CommitWithDiff, 0, len(commits))
+	for _, c := range commits {
+		files, err := repo.DiffFor(c)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "warning: could not load diff for %s: %v\n", c.Hash[:7], err)
+			files = nil
+		}
+		loaded = append(loaded, export.CommitWithDiff{Commit: c, Files: files})
+	}
+
+	var out io.Writer = os.Stdout
+	if opts.outputPath != "" {
+		f, err := os.Create(opts.outputPath)
+		if err != nil {
+			return fmt.Errorf("create %s: %w", opts.outputPath, err)
+		}
+		defer f.Close()
+		out = f
+	}
+
+	exportOpts := export.Options{
+		RepoName:     filepath.Base(cwd),
+		GeneratedAt:  time.Now(),
+		ExcludeBody:  opts.excludeBody,
+		MaxHunkLines: opts.maxHunkLines,
+	}
+
+	switch strings.ToLower(opts.exportFmt) {
+	case "markdown", "md":
+		return export.Markdown(out, loaded, exportOpts)
+	case "json":
+		return export.JSON(out, loaded, exportOpts)
+	default:
+		return fmt.Errorf("unknown export format %q (want markdown or json)", opts.exportFmt)
+	}
 }
 
 func shouldUseTUI(opts *replayOpts) bool {
