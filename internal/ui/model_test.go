@@ -187,6 +187,12 @@ func TestModel_View_RendersAllFourPanels(t *testing.T) {
 	m := New("repo", fixtureCommits(3))
 	m, _ = updateModel(m, tea.WindowSizeMsg{Width: 100, Height: 30})
 
+	// Seek past the subject typewriter + the diff stagger so we render
+	// the fully-revealed frame.
+	if m.clock != nil {
+		m.clock.Seek(commitHoldDuration)
+	}
+
 	view := m.View()
 	if !strings.Contains(view, "gitshow") {
 		t.Error("header missing 'gitshow'")
@@ -195,10 +201,24 @@ func TestModel_View_RendersAllFourPanels(t *testing.T) {
 		t.Error("main panel missing commit meta")
 	}
 	if !strings.Contains(view, "@@") {
-		t.Error("diff panel missing hunk header")
+		t.Error("diff panel missing hunk header at fully-revealed frame")
 	}
 	if !strings.Contains(view, "navigate") {
 		t.Error("timeline hints missing")
+	}
+}
+
+// At the very first frame, the diff stagger hasn't started yet, so the
+// hunk should NOT be visible.  This protects the animation timing.
+func TestModel_View_DiffIsAnimatedNotImmediatelyVisible(t *testing.T) {
+	m := New("repo", fixtureCommits(1))
+	m, _ = updateModel(m, tea.WindowSizeMsg{Width: 100, Height: 30})
+	if m.clock != nil {
+		m.clock.Seek(0)
+	}
+	view := m.View()
+	if strings.Contains(view, "@@") {
+		t.Errorf("at t=0, diff should not yet be revealed; got:\n%s", view)
 	}
 }
 
@@ -238,5 +258,60 @@ func TestTimelineDots_WidthSmallerThanCommits_Resamples(t *testing.T) {
 func TestModel_BuildsOnAllPlatforms(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("informational")
+	}
+}
+
+// When enough cinematic time has elapsed, tick should advance to the
+// next commit and reset the per-commit clock.
+func TestModel_Tick_AutoAdvances(t *testing.T) {
+	m := New("repo", fixtureCommits(3))
+	if m.clock == nil {
+		t.Fatal("expected clock to be initialised")
+	}
+	// Jump past the commit hold duration so the next tick should
+	// auto-advance us off commit 0 onto commit 1.
+	m.clock.Seek(commitHoldDuration + time.Second)
+	next, _ := m.Update(tickMsg(time.Now()))
+	mm := next.(Model)
+	if mm.CurrentIndex() != 1 {
+		t.Errorf("after long tick, idx = %d, want 1", mm.CurrentIndex())
+	}
+}
+
+func TestModel_Tick_DoesNotAdvanceWhenPaused(t *testing.T) {
+	m := New("repo", fixtureCommits(3))
+	m = send(t, m, key(" ")) // pause
+	if m.clock != nil {
+		m.clock.Seek(commitHoldDuration + time.Second)
+	}
+	next, _ := m.Update(tickMsg(time.Now()))
+	mm := next.(Model)
+	if mm.CurrentIndex() != 0 {
+		t.Errorf("paused tick advanced idx to %d, want 0", mm.CurrentIndex())
+	}
+}
+
+func TestModel_Tick_StopsAtLastCommit(t *testing.T) {
+	m := New("repo", fixtureCommits(2))
+	m = send(t, m, tea.KeyMsg{Type: tea.KeyEnd}) // jump to last
+	if m.clock != nil {
+		m.clock.Seek(commitHoldDuration + time.Second)
+	}
+	next, _ := m.Update(tickMsg(time.Now()))
+	mm := next.(Model)
+	if mm.CurrentIndex() != 1 {
+		t.Errorf("at last commit, tick should stay put; got idx=%d", mm.CurrentIndex())
+	}
+}
+
+func TestModel_NavigationResetsClock(t *testing.T) {
+	m := New("repo", fixtureCommits(3))
+	if m.clock == nil {
+		t.Fatal("expected clock")
+	}
+	m.clock.Seek(2 * time.Second)
+	m = send(t, m, tea.KeyMsg{Type: tea.KeyRight})
+	if got := m.clock.Elapsed(); got > 100*time.Millisecond {
+		t.Errorf("clock should reset on right; got elapsed=%v", got)
 	}
 }

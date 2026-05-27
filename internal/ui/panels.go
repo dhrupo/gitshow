@@ -6,6 +6,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/dhrupo/gitshow/internal/animation"
 	gitpkg "github.com/dhrupo/gitshow/internal/git"
 	"github.com/dhrupo/gitshow/internal/render"
 )
@@ -69,8 +70,19 @@ func (m Model) renderMain() string {
 	subject := strings.TrimSpace(c.Subject())
 	body := strings.TrimSpace(strings.TrimPrefix(c.Message, c.Subject()))
 
+	// Typewriter the subject so it reveals letter-by-letter when the
+	// camera lands on this commit.  In tests (no clock) we just show
+	// the whole subject.
+	revealed := subject
+	if m.clock != nil {
+		revealed = animation.Typewriter(subject, m.commitElapsed(), subjectRevealDuration)
+	}
+	if revealed == "" {
+		revealed = " " // keep card height stable on the first frame
+	}
+
 	lines := []string{
-		m.theme.CommitSubject.Render(subject),
+		m.theme.CommitSubject.Render(revealed),
 		m.theme.CommitMeta.Render(fmt.Sprintf("commit %s  •  %s  •  %s",
 			short, c.Author, c.Timestamp.Format("2006-01-02 15:04"))),
 	}
@@ -102,6 +114,19 @@ func (m Model) renderDiff() string {
 		MaxHunkLines: maxHunkLines,
 	})
 	body = trimTrailingNewlines(body)
+
+	// Stagger the body: reveal lines one at a time as cinematic time
+	// advances.  Once the typewriter has finished spelling the subject
+	// we start showing the diff line-by-line.
+	if m.clock != nil {
+		elapsed := m.commitElapsed() - subjectRevealDuration
+		if elapsed > 0 {
+			lines := strings.Split(body, "\n")
+			body = animation.StaggerLines(lines, elapsed, diffLinePerInterval)
+		} else {
+			body = ""
+		}
+	}
 	return m.theme.DiffPanel.Width(m.width - 2).Render(body)
 }
 
