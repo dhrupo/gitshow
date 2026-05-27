@@ -7,7 +7,6 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/dhrupo/gitshow/internal/animation"
-	gitpkg "github.com/dhrupo/gitshow/internal/git"
 	"github.com/dhrupo/gitshow/internal/render"
 )
 
@@ -191,12 +190,3 @@ func trimTrailingNewlines(s string) string {
 	return strings.TrimRight(s, "\n")
 }
 
-// renderQuit is exposed for completeness but unused — kept here so the
-// View() switch reads naturally.
-func renderQuit() string {
-	return "  Thanks for watching.\n"
-}
-
-// Silence unused-import warning if gitpkg is only referenced inside
-// build-tag-specific code paths.
-var _ gitpkg.Commit

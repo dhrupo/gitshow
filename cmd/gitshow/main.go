@@ -11,7 +11,7 @@ import (
 // Version is the gitshow build version.  Override at link time:
 //
 //	go build -ldflags "-X main.Version=0.1.0" ./cmd/gitshow
-var Version = "0.0.0-dev"
+var Version = "0.1.0"
 
 func main() {
 	if err := commands.NewRootCmd(Version).Execute(); err != nil {
