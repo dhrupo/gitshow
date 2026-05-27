@@ -23,6 +23,51 @@ type Commit struct {
 	Timestamp time.Time
 }
 
+// ChangeMode tags how a file moved between commit and its parent.
+type ChangeMode string
+
+const (
+	Added    ChangeMode = "added"
+	Modified ChangeMode = "modified"
+	Deleted  ChangeMode = "deleted"
+	Renamed  ChangeMode = "renamed"
+)
+
+// ChangedFile is one file that moved between two commits.  Hunks may
+// be empty for binary or pure-rename changes.
+type ChangedFile struct {
+	Path    string     // new path (or old path when deleted)
+	OldPath string     // previous path when renamed; empty otherwise
+	Mode    ChangeMode
+	Binary  bool
+	Hunks   []Hunk
+}
+
+// LineKind tags a single line of a diff hunk.
+type LineKind int
+
+const (
+	LineContext LineKind = iota
+	LineAdded
+	LineDeleted
+)
+
+// HunkLine is one line within a hunk.  Text never includes the
+// leading +/-/space marker.
+type HunkLine struct {
+	Kind LineKind
+	Text string
+}
+
+// Hunk is one @@ block from a unified diff.
+type Hunk struct {
+	OldStart int
+	OldLines int
+	NewStart int
+	NewLines int
+	Lines    []HunkLine
+}
+
 // Subject returns the first line of the commit message.
 func (c Commit) Subject() string {
 	if c.Message == "" {

@@ -3,15 +3,21 @@ package commands
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 
 	gitpkg "github.com/dhrupo/gitshow/internal/git"
+	"github.com/dhrupo/gitshow/internal/render"
 )
 
 type replayOpts struct {
-	commits int
-	branch  string
+	commits      int
+	branch       string
+	noDiff       bool
+	noColor      bool
+	maxHunkLines int
+	chromaStyle  string
 }
 
 func newReplayCmd() *cobra.Command {
@@ -41,6 +47,10 @@ Examples:
 
 	cmd.Flags().IntVarP(&opts.commits, "commits", "n", 20, "number of recent commits to replay (default 20)")
 	cmd.Flags().StringVarP(&opts.branch, "branch", "b", "", "branch to replay (default: current HEAD)")
+	cmd.Flags().BoolVar(&opts.noDiff, "no-diff", false, "skip per-file diffs; show only commit headers")
+	cmd.Flags().BoolVar(&opts.noColor, "no-color", false, "disable ANSI colors (useful for piping to a file)")
+	cmd.Flags().IntVar(&opts.maxHunkLines, "max-hunk-lines", 80, "max lines per hunk before truncation; 0 = unlimited")
+	cmd.Flags().StringVar(&opts.chromaStyle, "chroma-style", "monokai", "Chroma syntax theme (monokai / dracula / nord / ...)")
 
 	return cmd
 }
@@ -66,10 +76,44 @@ func runReplay(opts *replayOpts) error {
 		return nil
 	}
 
-	// Week 1 deliverable: dump raw commit messages.  Week 3 swaps
-	// this for a Bubble Tea cinematic player.
-	for _, c := range commits {
-		fmt.Printf("%s  %s  %s\n", c.Hash[:7], c.Author, c.Subject())
+	renderOpts := render.Options{
+		ChromaStyle:  opts.chromaStyle,
+		NoColor:      opts.noColor,
+		MaxHunkLines: opts.maxHunkLines,
+	}
+
+	for i, c := range commits {
+		if i > 0 {
+			fmt.Println()
+		}
+		printCommitHeader(c, opts.noColor)
+		if opts.noDiff {
+			continue
+		}
+		files, err := repo.DiffFor(c)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "  (could not load diff: %v)\n", err)
+			continue
+		}
+		if len(files) == 0 {
+			continue
+		}
+		fmt.Print(render.DiffSet(files, renderOpts))
 	}
 	return nil
+}
+
+func printCommitHeader(c gitpkg.Commit, noColor bool) {
+	short := c.Hash
+	if len(short) > 7 {
+		short = short[:7]
+	}
+	subject := strings.TrimSpace(c.Subject())
+	when := c.Timestamp.Format("2006-01-02 15:04")
+	if noColor {
+		fmt.Printf("commit %s  %s  %s\n  %s\n", short, c.Author, when, subject)
+		return
+	}
+	fmt.Printf("\x1b[1;33mcommit %s\x1b[0m  \x1b[36m%s\x1b[0m  \x1b[2m%s\x1b[0m\n  \x1b[1m%s\x1b[0m\n",
+		short, c.Author, when, subject)
 }
