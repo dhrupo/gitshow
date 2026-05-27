@@ -1,0 +1,10 @@
+/gitshow
+/dist/
+*.test
+*.out
+*.log
+.DS_Store
+coverage.out
+coverage.html
+.vscode/
+.idea/
