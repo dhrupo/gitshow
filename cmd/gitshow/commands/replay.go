@@ -3,12 +3,14 @@ package commands
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
 
 	gitpkg "github.com/dhrupo/gitshow/internal/git"
 	"github.com/dhrupo/gitshow/internal/render"
+	"github.com/dhrupo/gitshow/internal/ui"
 )
 
 type replayOpts struct {
@@ -18,6 +20,7 @@ type replayOpts struct {
 	noColor      bool
 	maxHunkLines int
 	chromaStyle  string
+	tui          string // "auto" (default), "on", or "off"
 }
 
 func newReplayCmd() *cobra.Command {
@@ -51,6 +54,7 @@ Examples:
 	cmd.Flags().BoolVar(&opts.noColor, "no-color", false, "disable ANSI colors (useful for piping to a file)")
 	cmd.Flags().IntVar(&opts.maxHunkLines, "max-hunk-lines", 80, "max lines per hunk before truncation; 0 = unlimited")
 	cmd.Flags().StringVar(&opts.chromaStyle, "chroma-style", "monokai", "Chroma syntax theme (monokai / dracula / nord / ...)")
+	cmd.Flags().StringVar(&opts.tui, "tui", "auto", "interactive TUI mode: auto / on / off")
 
 	return cmd
 }
@@ -76,6 +80,40 @@ func runReplay(opts *replayOpts) error {
 		return nil
 	}
 
+	if shouldUseTUI(opts) {
+		return runReplayTUI(repo, commits, cwd)
+	}
+	return runReplayDump(repo, commits, opts)
+}
+
+func shouldUseTUI(opts *replayOpts) bool {
+	switch strings.ToLower(opts.tui) {
+	case "on", "true", "yes":
+		return true
+	case "off", "false", "no":
+		return false
+	default:
+		return ui.IsStdoutTTY()
+	}
+}
+
+func runReplayTUI(repo *gitpkg.Repo, commits []gitpkg.Commit, cwd string) error {
+	loaded := make([]ui.CommitWithDiff, 0, len(commits))
+	for _, c := range commits {
+		files, err := repo.DiffFor(c)
+		if err != nil {
+			// Don't fail the whole replay because one commit's diff
+			// can't be loaded; record an empty diff and keep going.
+			fmt.Fprintf(os.Stderr, "warning: could not load diff for %s: %v\n", c.Hash[:7], err)
+			files = nil
+		}
+		loaded = append(loaded, ui.CommitWithDiff{Commit: c, Files: files})
+	}
+	repoName := filepath.Base(cwd)
+	return ui.Run(ui.New(repoName, loaded))
+}
+
+func runReplayDump(repo *gitpkg.Repo, commits []gitpkg.Commit, opts *replayOpts) error {
 	renderOpts := render.Options{
 		ChromaStyle:  opts.chromaStyle,
 		NoColor:      opts.noColor,
