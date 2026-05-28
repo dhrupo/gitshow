@@ -37,6 +37,15 @@ can actually pay attention to.
 
 ## Install
 
+### Homebrew (macOS / Linux)
+
+```bash
+brew install dhrupo/tap/gitshow
+```
+
+The tap repo lives at [github.com/dhrupo/homebrew-tap](https://github.com/dhrupo/homebrew-tap)
+and is updated automatically on every tagged release via GoReleaser.
+
 ### From source
 
 ```bash
@@ -47,12 +56,6 @@ go build -o gitshow ./cmd/gitshow
 ```
 
 Requires Go ≥ 1.22.
-
-### Coming soon
-
-```bash
-brew install gitshow       # not yet published
-```
 
 ## Quick start
 
