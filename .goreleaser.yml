@@ -1,0 +1,89 @@
+version: 2
+
+before:
+  hooks:
+    - go mod tidy
+    - go test ./...
+
+builds:
+  - id: gitshow
+    main: ./cmd/gitshow
+    binary: gitshow
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X main.Version={{ .Version }}
+
+archives:
+  - id: gitshow
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    format: tar.gz
+    files:
+      - README.md
+      - LICENSE
+      - docs/demo.gif
+
+checksum:
+  name_template: "checksums.txt"
+  algorithm: sha256
+
+changelog:
+  sort: asc
+  use: github
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+      - Merge pull request
+      - Merge branch
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-dev"
+
+release:
+  github:
+    owner: dhrupo
+    name: gitshow
+  draft: false
+  prerelease: auto
+  header: |
+    ## gitshow {{ .Tag }}
+
+    Cinematic terminal storytelling for Git history.
+
+    ```bash
+    brew install dhrupo/tap/gitshow
+    ```
+  footer: |
+    **Full Changelog**: https://github.com/dhrupo/gitshow/compare/{{ .PreviousTag }}...{{ .Tag }}
+
+brews:
+  - name: gitshow
+    repository:
+      owner: dhrupo
+      name: homebrew-tap
+      branch: main
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    directory: Formula
+    commit_author:
+      name: gitshow-release-bot
+      email: dhrupo@users.noreply.github.com
+    commit_msg_template: "RELEASE: gitshow {{ .Tag }}"
+    homepage: "https://github.com/dhrupo/gitshow"
+    description: "Cinematic terminal storytelling engine for Git history"
+    license: "MIT"
+    skip_upload: auto
+    install: |
+      bin.install "gitshow"
+    test: |
+      assert_match "gitshow version #{version}", shell_output("#{bin}/gitshow --version")
+      assert_match "replay", shell_output("#{bin}/gitshow --help")
